@@ -21,13 +21,23 @@ from email.message import EmailMessage
 # 시간 객체
 from datetime import datetime, timedelta
 
-
+# Token생성 JWT라이브러리
+import jwt
 
 
 bp = Blueprint('main', __name__, url_prefix='/')
 
 svrURL = 'http://203.232.193.164:5000/'
 #svrURL = 'http://localhost:5000/'
+
+def generate_access_token(uuid):
+    payload = {
+        'sub': uuid,
+        'iat': datetime.utcnow(),
+        'exp': datetime.utcnow() + timedelta(days=1)
+    }
+    access_token = jwt.encode(payload, '221124104', algorithm='HS256')
+    return access_token.decode('utf-8')
 
 @bp.route("/socket")
 def socket_test():
