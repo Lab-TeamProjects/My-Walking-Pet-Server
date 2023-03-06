@@ -1,13 +1,7 @@
 {
-	"folders": [
-		{
-			"path": "."
-		}
-	],
-	"settings": {
-		"files.associations": {
-			"cmath": "cpp",
-			"ostream": "cpp"
-		}
-	}
+    "folders": [
+        {
+            "path": "."
+        }
+    ]
 }
