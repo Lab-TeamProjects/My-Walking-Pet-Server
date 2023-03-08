@@ -2,9 +2,7 @@ from flask      import Flask
 from sqlalchemy import create_engine
 from datetime import timedelta
 
-
-# 블루 프린트 리스트
-
+from app.routes import routes_list
 
 
 def create_app(test_config=None):
@@ -20,8 +18,7 @@ def create_app(test_config=None):
     
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=60) # 로그인 시간 60분
 
-    from .views import main_views
-    app.register_blueprint(main_views.bp)
+    # 라우트 함수 가져오기
+    app = routes_list(app)
 
-    # 라우트 함수 등록 후 리턴
     return app

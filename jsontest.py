@@ -51,11 +51,23 @@ def login_test(access_token):
     
     return response.json()
 
-login = Login()
-access_token = login['access_token']
-print(access_token)
-print('토큰 발급 완료')
-result = login_test(access_token)
+def email_test():
+    url = server + "/check-email-duplication"
+    
+    headers = {'Authorization': f'Bearer MyAccessToken'}
+    data = {"email" : "ging1030l@gmail.com"}
+    json_data = json.dumps(data)
+    headers.update({'Content-Type': 'application/json'})
+    response = requests.post(url, headers=headers, data=json_data)
+    
+    return response.json()
+    
+# login = Login()
+# access_token = login['access_token']
+# print(access_token)
+# print('토큰 발급 완료')
+# result = login_test(access_token)
 
-print(result)
+# print(result)
 
+print(email_test())
