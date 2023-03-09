@@ -101,7 +101,7 @@ def sign_up():
 
     # 인증 메일 전송
     email_verification(user_id, _email)
-    return jsonify({'msg': '가입완료'})
+    return jsonify({'result': 'OK'})
 
 # 인증 메일 전송
 def email_verification(user_id, email):
@@ -118,6 +118,7 @@ def email_verification(user_id, email):
         conn.execute(text(stmt))
         conn.commit()
 
+    
     # 인증 메일 발송
     smtp = smtplib.SMTP('smtp.gmail.com', 587)
     # TLS 암호화
@@ -141,15 +142,16 @@ def email_verification(user_id, email):
 @bp.route("/check-email-duplication", methods=['POST'])
 def check_email_duplication():
     _email = request.json['email']
+    print(_email)
     # email 검색
     stmt = "SELECT email FROM users WHERE email='" + _email +"'"
     with current_app.database.connect() as conn:
         row = conn.execute(text(stmt)).fetchone()
   
         if row:
-            return jsonify({'msg': '중복된 이메일'})
+            return jsonify({'result': 'NO'})
         else:
-            return jsonify({'msg': '사용가능한 이메일'})
+            return jsonify({'result': 'OK'})
         
 
 
@@ -159,7 +161,7 @@ def mailauth():
     _authToken = request.args.get('authToken')
 
     with current_app.database.connect() as conn:
-        stmt = f"SELECT * FROM email_verification WHERE token='{_authToken}'"
+        stmt = f"SELECT * FROM email_verification_tokens WHERE token='{_authToken}'"
         # .fetchone(): 검색결과가 None인지 구분 해주는 메소드
         row = conn.execute(text(stmt)).fetchone()
         if row:
@@ -170,8 +172,10 @@ def mailauth():
 
             if exp < datetime.now():
                 # 만료 시간보다 현재 시간이 빠를 때
-                stmt = f"UPDATE users SET authSatus = 1 WHERE user_id='{user_id}'"
+                stmt = f"UPDATE users SET authStatus = 1 WHERE user_id='{user_id}'"
                 conn.execute(text(stmt))
+
+                # 여기는 응답을 페이지 이동으로 해야할듯.....
                 return jsonify({'msg': '이메일 인증 완료'})
             else:
                 return jsonify({'msg': '만료된 토큰입니다.'})
@@ -190,9 +194,14 @@ def login():
         row = conn.execute(text(stmt)).fetchone()
         
         if not row:
-            return jsonify({'msg': '존재하지 않는 아이디입니다.'})
+            return jsonify({'result': 'NoID'})
         user_id = row.user_id
         uuid = row.uuid
+
+        stmt = f"SELECT * FROM access_tokens WHERE user_id='{user_id}'"
+        row = conn.execute(text(stmt)).fetchone()
+        if row:
+            return jsonify({'access_token': row.access_token})
 
         # user_id로 hash_pw, salt 검색 쿼리
         stmt = f"SELECT * FROM passwords WHERE user_id='{user_id}'"
@@ -209,9 +218,9 @@ def login():
             kst_now = korea_now_time()
             stmt = f"UPDATE passwords SET update_date ='{kst_now}' WHERE user_id='{user_id}'"
         else:
-            return jsonify({'msg': '잘못된 비밀번호.'}), 401
+            return jsonify({'result': 'NoPW'}), 401
 
     print(_email + "님이 로그인하였습니다.")
     access_token = generate_access_token(str(user_id))
 
-    return jsonify({'access_token': access_token})
+    return jsonify({'result': 'OK', 'access_token': access_token})
