@@ -10,6 +10,7 @@ eventlet.monkey_patch()
 # mysql-connector
 # pyjwt
 # Flask-OAuthlib x
+# flask-sqlalchemy
 
 app = create_app()
 # 소켓 이벤트 핸들러 등록

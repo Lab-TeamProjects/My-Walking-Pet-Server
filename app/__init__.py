@@ -1,9 +1,12 @@
 from flask      import Flask
 from sqlalchemy import create_engine
 from datetime import timedelta
+from flask_sqlalchemy import SQLAlchemy
+from flask import current_app
 
 from app.routes import routes_list
 
+db = SQLAlchemy()
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -12,9 +15,9 @@ def create_app(test_config=None):
     app.debug = True
 
     app.config.from_pyfile('config.py')
-    database = create_engine(app.config['DB_URL'], max_overflow=0)
+    # db.init_app(app)
+    database = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], max_overflow=0)
     app.database = database
-    database = 'mywalkingpet'
     
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=60) # 로그인 시간 60분
 

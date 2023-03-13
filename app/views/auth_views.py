@@ -3,7 +3,9 @@ from flask import Blueprint
 from flask import current_app
 
 # MySQl 연결
-from sqlalchemy import text
+from sqlalchemy import text, insert
+from flask_sqlalchemy import SQLAlchemy
+
 
 # 이메일 발송
 import smtplib
@@ -26,10 +28,16 @@ from flask import request
 # 한국 시간 계산
 import pytz
 
+# 데이터 모델 클래스
+# from models import Users, Passwords, email_verification_tokens, access_tokens
+
 bp = Blueprint('auth', __name__, url_prefix='/')
 
 svrURL = 'http://203.232.193.164:5000/'
 #svrURL = 'http://localhost:5000/'
+
+
+    
 
 
 # 한국시간 리턴
@@ -72,10 +80,27 @@ def generate_access_token(user_id):
             return False
 
     return access_token
+from sqlalchemy import MetaData
+metadata_obj = MetaData()
+import uuid
+
+def generate_uuid():
+    return str(uuid.uuid4()).replace('-', '')
+
+from sqlalchemy import Table, Column, Integer, String, Boolean
+user_table = Table(
+     "users",
+     metadata_obj,
+     Column("user_id", Integer, primary_key=True),
+     Column("email", String(320), unique=True, nullable=False),
+     Column("uuid", String(32), nullable=False, default=generate_uuid),
+     Column("authStatus", Boolean, nullable=False, default=False)
+)
 
 # 회원가입
 @bp.route("/sign-up", methods=['POST'])
 def sign_up():
+    db = current_app.database
     _email = request.json['email']
     _password = request.json['password']
 
@@ -85,22 +110,36 @@ def sign_up():
     # 비번 + 솔트 해시값 얻기
     hash_pw = hashlib.sha256(_password.encode()).hexdigest()
 
-    # users 테이블에 insert
-    with current_app.database.connect() as conn:
-        stmt = f"INSERT INTO users(email, uuid) VALUES('{_email}', REPLACE(UUID(), '-', ''))" 
-        result = conn.execute(text(stmt))
+    # new_user = Users(email=_email)
+    # db.session.add(new_user)
+    # db.session.commit()
+
+    kst_now = korea_now_time()
+    # new_pw = Passwords()
+
+    with db.connect() as conn:
+        # stmt = f"INSERT INTO users(email, uuid) VALUES('{_email}', )" 
+        result = conn.execute(insert(user_table).values(email=_email))
         conn.commit()
         user_id = result.lastrowid
+    
 
-        kst_now = korea_now_time()
-        # password 저장
-        stmt = f"""INSERT INTO passwords(user_id, password, salt, update_date)
-                    VALUES('{user_id}', '{hash_pw}', '{salt}', '{kst_now}')"""
-        conn.execute(text(stmt))
-        conn.commit()
+    # users 테이블에 insert
+    # with current_app.database.connect() as conn:
+    #     stmt = f"INSERT INTO users(email, uuid) VALUES('{_email}', )" 
+    #     result = conn.execute(text(stmt))
+    #     conn.commit()
+    #     user_id = result.lastrowid
 
-    # 인증 메일 전송
-    email_verification(user_id, _email)
+    #     kst_now = korea_now_time()
+    #     # password 저장
+    #     stmt = f"""INSERT INTO passwords(user_id, password, salt, update_date)
+    #                 VALUES('{user_id}', '{hash_pw}', '{salt}', '{kst_now}')"""
+    #     conn.execute(text(stmt))
+    #     conn.commit()
+
+    # # 인증 메일 전송
+    # email_verification(user_id, _email)
     return jsonify({'result': 'OK'})
 
 # 인증 메일 전송

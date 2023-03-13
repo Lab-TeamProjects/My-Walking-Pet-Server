@@ -12,9 +12,9 @@ def Sign_up():
 
     # response = requests.post("http://203.232.193.164:9999/sign-up", json={"email" : "ging1030l@gmail.com", "password" : "1234"})
     
-    url = "http://localhost:5000/sign-up"
+    url = server + "/sign-up"
     
-    data = {"email" : "ging1030l@gmail.com", "password" : "1234"}
+    data = {"email" : "22222@gmail.com", "password" : "1234"}
     access_token = 'my_access_token'
     headers = {'Authrization': f'Bearer {access_token}'}
 
@@ -29,7 +29,7 @@ def Sign_up():
 def Login():
     url = server + "/login"
     
-    data = {"email" : "ging1030l@gmail.com", "password" : "1234"}
+    data = {"email" : "ging1030l@gmail.com'; DROP TABLE test;--", "password" : "1234"}
     access_token = 'my_access_token'
     headers = {'Authrization': f'Bearer {access_token}'}
 
@@ -70,4 +70,4 @@ def email_test():
 
 # print(result)
 
-print(email_test())
+print(Sign_up())
