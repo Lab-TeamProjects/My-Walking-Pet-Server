@@ -9,8 +9,9 @@ eventlet.monkey_patch()
 # sqlalchmey
 # mysql-connector
 # pyjwt
-# Flask-OAuthlib x
 # flask-sqlalchemy
+# sendgrid
+# python-dotenv (환경변수)
 
 app = create_app()
 # 소켓 이벤트 핸들러 등록

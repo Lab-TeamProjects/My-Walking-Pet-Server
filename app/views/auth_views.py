@@ -3,13 +3,18 @@ from flask import Blueprint
 from flask import current_app
 
 # MySQl 연결
-from sqlalchemy import text, insert
+from sqlalchemy import text, insert, select, update
 from flask_sqlalchemy import SQLAlchemy
+from . import models
 
+# 환경 변수
+from dotenv import load_dotenv
 
+import protocol
 # 이메일 발송
-import smtplib
-from email.message import EmailMessage
+
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 # 시간 객체
 from datetime import datetime, timedelta
@@ -28,6 +33,10 @@ from flask import request
 # 한국 시간 계산
 import pytz
 
+import os
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
 # 데이터 모델 클래스
 # from models import Users, Passwords, email_verification_tokens, access_tokens
 
@@ -35,10 +44,8 @@ bp = Blueprint('auth', __name__, url_prefix='/')
 
 svrURL = 'http://203.232.193.164:5000/'
 #svrURL = 'http://localhost:5000/'
-
-
-    
-
+# 환경변수 로드
+load_dotenv()
 
 # 한국시간 리턴
 def korea_now_time():
@@ -49,7 +56,7 @@ def korea_now_time():
 # 엑세스 토큰 발급
 def generate_access_token(user_id):
     with current_app.database.connect() as conn:
-        stmt = "SELECT uuid FROM users WHERE user_id='" + user_id +"'"
+        stmt = select(models.users).where(models.users.c.user_id == user_id)
         row = conn.execute(text(stmt)).fetchone()
 
         if row:
@@ -80,33 +87,18 @@ def generate_access_token(user_id):
             return False
 
     return access_token
-from sqlalchemy import MetaData
-metadata_obj = MetaData()
-import uuid
-
-def generate_uuid():
-    return str(uuid.uuid4()).replace('-', '')
-
-from sqlalchemy import Table, Column, Integer, String, Boolean
-user_table = Table(
-     "users",
-     metadata_obj,
-     Column("user_id", Integer, primary_key=True),
-     Column("email", String(320), unique=True, nullable=False),
-     Column("uuid", String(32), nullable=False, default=generate_uuid),
-     Column("authStatus", Boolean, nullable=False, default=False)
-)
 
 # 회원가입
 @bp.route("/sign-up", methods=['POST'])
 def sign_up():
     db = current_app.database
+
     _email = request.json['email']
     _password = request.json['password']
 
     # 솔트값 생성
-    salt = secrets.token_hex(32)
-    _password += salt
+    _salt = secrets.token_hex(32)
+    _password += _salt
     # 비번 + 솔트 해시값 얻기
     hash_pw = hashlib.sha256(_password.encode()).hexdigest()
 
@@ -118,32 +110,47 @@ def sign_up():
     # new_pw = Passwords()
 
     with db.connect() as conn:
-        # stmt = f"INSERT INTO users(email, uuid) VALUES('{_email}', )" 
-        result = conn.execute(insert(user_table).values(email=_email))
+        # user 정보 입력 
+        result = conn.execute(insert(models.users).values(email=_email))
         conn.commit()
         user_id = result.lastrowid
     
+        # password 입력
+        kst_now = korea_now_time()
+        result = conn.execute(insert(models.passwords).values(user_id=user_id, password=hash_pw, salt=_salt, update_date=kst_now))
+        conn.commit()
 
-    # users 테이블에 insert
-    # with current_app.database.connect() as conn:
-    #     stmt = f"INSERT INTO users(email, uuid) VALUES('{_email}', )" 
-    #     result = conn.execute(text(stmt))
-    #     conn.commit()
-    #     user_id = result.lastrowid
+    # 인증 링크 생성
+    auth_url = email_verification(user_id, _email)
+    # 인증 메일 발송
+    send_result = send_email(_email, auth_url)
+    if send_result:
+        return jsonify({'result': protocol.OK })
+    else:
+        return jsonify({'result': protocol.EMAIL_SEND_FAIL })
 
-    #     kst_now = korea_now_time()
-    #     # password 저장
-    #     stmt = f"""INSERT INTO passwords(user_id, password, salt, update_date)
-    #                 VALUES('{user_id}', '{hash_pw}', '{salt}', '{kst_now}')"""
-    #     conn.execute(text(stmt))
-    #     conn.commit()
+# 메일 발송
+def send_email(recipient, body):
+    message = Mail(
+        from_email='yjnnn0011@gmail.com',
+        to_emails=recipient,
+        subject='[MyWalkingPet] 회원가입 이메일 인증',
+        html_content=body)
 
-    # # 인증 메일 전송
-    # email_verification(user_id, _email)
-    return jsonify({'result': 'OK'})
+    try:
+        sg = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
+        response = sg.send(message)
+        print(response.status_code)
+        print(response.body)
+        print(response.headers)
+    except Exception as e:
+        print('메일전송실패: ' + str(e))
+        return False
 
-# 인증 메일 전송
+# 메일 인증 링크 생성
 def email_verification(user_id, email):
+    db = current_app.database
+    
     # 인증 토큰 생성 후 DB 입력
     _token = secrets.token_hex(32)      # 결과값 자리수 nbyte*x
 
@@ -151,30 +158,12 @@ def email_verification(user_id, email):
     iat = kst_now                                  # 발급 시간
     exp = kst_now + timedelta(days=1)              # 만료 시간
 
-    with current_app.database.connect() as conn:
-        stmt = f"""INSERT INTO email_verification_tokens(user_id, token, token_issued_at, token_expiration_time)
-                VALUES('{user_id}', '{_token}', '{iat}', '{exp}')"""
-        conn.execute(text(stmt))
+    with db.connect() as conn:
+        # 이메일 토큰 정보 저장
+        result = conn.execute(insert(models.email_verification_tokens).values(user_id=user_id, token=_token, token_issued_at=iat, token_expiration_time=exp))
         conn.commit()
 
-    
-    # 인증 메일 발송
-    smtp = smtplib.SMTP('smtp.gmail.com', 587)
-    # TLS 암호화
-    smtp.starttls()
-    # 이메일 로그인
-    smtp.login('yjnnn0011@gmail.com', 'riccnlfbvaxrgfmd')
-    # 메일 작성
-    msg = EmailMessage()
-    msg.set_content(svrURL + f'mailauth?authToken={_token}')
-    msg['Subject'] = '[MyWalkingPet] 회원가입 이메일 인증'
-    msg['From'] = 'yjnnn0011@gmail.com'
-    msg['To'] = email
-
-    # 메일 전송
-    smtp.send_message(msg)
-    # 이메일 연결 종료
-    smtp.quit()
+    return svrURL + f'mailauth?authToken={_token}'
 
 
 # 이메일 중복검사 함수

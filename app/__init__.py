@@ -16,10 +16,8 @@ def create_app(test_config=None):
 
     app.config.from_pyfile('config.py')
     # db.init_app(app)
-    database = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], max_overflow=0)
+    database = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], max_overflow=0, pool_size=3)
     app.database = database
-    
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=60) # 로그인 시간 60분
 
     # 라우트 함수 가져오기
     app = routes_list(app)
