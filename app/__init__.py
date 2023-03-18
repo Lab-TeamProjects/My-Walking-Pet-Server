@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from datetime import timedelta
 from flask_sqlalchemy import SQLAlchemy
 from flask import current_app
+from sqlalchemy.pool import QueuePool
 
 from app.routes import routes_list
 
@@ -16,7 +17,7 @@ def create_app(test_config=None):
 
     app.config.from_pyfile('config.py')
     # db.init_app(app)
-    database = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], max_overflow=0, pool_size=3)
+    database = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], poolclass=QueuePool, pool_size=5, max_overflow=10, pool_recycle=3600)
     app.database = database
 
     # 라우트 함수 가져오기

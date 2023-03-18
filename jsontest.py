@@ -29,7 +29,7 @@ def Sign_up():
 def Login():
     url = server + "/login"
     
-    data = {"email" : "ging1030l@gmail.com'; DROP TABLE test;--", "password" : "1234"}
+    data = {"email" : "ging1030l@gmail.com", "password" : "1234"}
     access_token = 'my_access_token'
     headers = {'Authrization': f'Bearer {access_token}'}
 
@@ -67,31 +67,6 @@ def email_test():
 # print(access_token)
 # print('토큰 발급 완료')
 # result = login_test(access_token)
-import os
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
-from dotenv import load_dotenv, find_dotenv
-
-load_dotenv()
-
-# print(result)
-def send_email():
-    message = Mail(
-        from_email='yjnnn0011@gmail.com',
-        to_emails='ging1030l@gmail.com',
-        subject='Sending with SendGrid is Fun',
-        html_content='<strong>and easy to do anywhere, even with Node.js</strong>')
-
-    try:
-        sg = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
-        response = sg.send(message)
-        print(response.status_code)
-        print(response.body)
-        print(response.headers)
-    except Exception as e:
-        print('에러' + str(e))
-
-print(os.environ.get('SENDGRID_API_KEY'))
 #send_email()
-#print(Sign_up())
+print(email_test())

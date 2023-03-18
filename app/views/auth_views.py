@@ -3,14 +3,16 @@ from flask import Blueprint
 from flask import current_app
 
 # MySQl 연결
-from sqlalchemy import text, insert, select, update
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from flask_sqlalchemy import SQLAlchemy
-from . import models
+# 데이터 모델 객체
+from .models import Users, Passwords, EmailVerificationTokens, AccessTokens
 
 # 환경 변수
 from dotenv import load_dotenv
 
-import protocol
+from . import protocol
 # 이메일 발송
 
 from sendgrid import SendGridAPIClient
@@ -37,13 +39,11 @@ import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
-# 데이터 모델 클래스
-# from models import Users, Passwords, email_verification_tokens, access_tokens
-
 bp = Blueprint('auth', __name__, url_prefix='/')
 
 svrURL = 'http://203.232.193.164:5000/'
 #svrURL = 'http://localhost:5000/'
+
 # 환경변수 로드
 load_dotenv()
 
@@ -53,78 +53,48 @@ def korea_now_time():
     utc_now = datetime.utcnow()
     return utc_now.astimezone(kst)
 
-# 엑세스 토큰 발급
-def generate_access_token(user_id):
-    with current_app.database.connect() as conn:
-        stmt = select(models.users).where(models.users.c.user_id == user_id)
-        row = conn.execute(text(stmt)).fetchone()
-
-        if row:
-            uuid = row.uuid
-
-            kst_now = korea_now_time()
-            
-            iat = kst_now
-            exp = kst_now + timedelta(days=1)
-            print(f"생성된 발급시간: {iat}, 생성된 만료시간: {exp}")
-
-            payload = {
-                'sub': uuid,
-                'iat': int(round(iat.timestamp())),
-                'exp': int(round(exp.timestamp()))
-                # int로 형변환해서 소수점을 버리는 과정에서 데이터가 손실
-                # 반올림으로 정확한 값을 유지
-            }
-
-            access_token = jwt.encode(payload, '221124104', algorithm='HS256')
-
-            # DB에 access token 저장
-            stmt = f"""REPLACE INTO access_tokens(user_id, access_token, access_token_issued_at, access_token_expiration_time)
-                    VALUES('{user_id}', '{access_token}', '{iat}', '{exp}')"""
-            conn.execute(text(stmt))
-            conn.commit()
-        else:
-            return False
-
-    return access_token
-
 # 회원가입
 @bp.route("/sign-up", methods=['POST'])
 def sign_up():
-    db = current_app.database
-
     _email = request.json['email']
     _password = request.json['password']
 
     # 솔트값 생성
-    _salt = secrets.token_hex(32)
-    _password += _salt
+    salt = secrets.token_hex(32)
+    _password += salt
     # 비번 + 솔트 해시값 얻기
     hash_pw = hashlib.sha256(_password.encode()).hexdigest()
 
-    # new_user = Users(email=_email)
-    # db.session.add(new_user)
-    # db.session.commit()
+    # 신규 유저 데이터 객체 생성
+    with Session(current_app.database) as session:
+        # 신규유저 정보 삽입
+        new_user = Users(email=_email)
+        session.add(new_user)
+        session.commit()
 
-    kst_now = korea_now_time()
-    # new_pw = Passwords()
+        session.refresh(new_user)
 
-    with db.connect() as conn:
-        # user 정보 입력 
-        result = conn.execute(insert(models.users).values(email=_email))
-        conn.commit()
-        user_id = result.lastrowid
-    
-        # password 입력
-        kst_now = korea_now_time()
-        result = conn.execute(insert(models.passwords).values(user_id=user_id, password=hash_pw, salt=_salt, update_date=kst_now))
-        conn.commit()
+        # 비밀번호 정보 삽입
+        new_pw = Passwords(
+            user_id=new_user.user_id,
+            password=hash_pw,
+            salt=salt,
+            update_date= korea_now_time()
+        )
+        session.add(new_pw)
+        session.commit()
 
+        # 세션 블록 밖에서도 사용하기 위한 인스턴스 캡처
+        session.expunge(new_user)
+
+    #return jsonify({'result': protocol.OK })
     # 인증 링크 생성
-    auth_url = email_verification(user_id, _email)
+    auth_url = email_verification(new_user.user_id)
     # 인증 메일 발송
     send_result = send_email(_email, auth_url)
+    
     if send_result:
+        print(f"'{new_user.email}'님의 회원가입했습니다.")
         return jsonify({'result': protocol.OK })
     else:
         return jsonify({'result': protocol.EMAIL_SEND_FAIL })
@@ -143,27 +113,31 @@ def send_email(recipient, body):
         print(response.status_code)
         print(response.body)
         print(response.headers)
+        return True
     except Exception as e:
         print('메일전송실패: ' + str(e))
         return False
 
 # 메일 인증 링크 생성
-def email_verification(user_id, email):
-    db = current_app.database
-    
+def email_verification(user_id):
     # 인증 토큰 생성 후 DB 입력
-    _token = secrets.token_hex(32)      # 결과값 자리수 nbyte*x
+    token = secrets.token_hex(32)      # 결과값 자리수 nbyte*x
 
     kst_now = korea_now_time()
     iat = kst_now                                  # 발급 시간
     exp = kst_now + timedelta(days=1)              # 만료 시간
 
-    with db.connect() as conn:
-        # 이메일 토큰 정보 저장
-        result = conn.execute(insert(models.email_verification_tokens).values(user_id=user_id, token=_token, token_issued_at=iat, token_expiration_time=exp))
-        conn.commit()
+    with Session(current_app.database) as session:
+        new_email_token = EmailVerificationTokens(
+            user_id=user_id,
+            token=token,
+            token_issued_at=iat,
+            token_expiration_time=exp
+        )
+        session.add(new_email_token)
+        session.commit()
 
-    return svrURL + f'mailauth?authToken={_token}'
+    return svrURL + f'mailauth?authToken={token}'
 
 
 # 이메일 중복검사 함수
@@ -177,78 +151,94 @@ def check_email_duplication():
         row = conn.execute(text(stmt)).fetchone()
   
         if row:
-            return jsonify({'result': 'NO'})
+            return jsonify({'result': protocol.EMAIL_IS_DUPLICATION})
         else:
-            return jsonify({'result': 'OK'})
+            return jsonify({'result': protocol.OK})
         
-
 
 # 이메일 인증 페이지(완료되면 authStatus 변경)
 @bp.route('/mailauth', methods=['GET'])
 def mailauth():
     _authToken = request.args.get('authToken')
 
-    with current_app.database.connect() as conn:
-        stmt = f"SELECT * FROM email_verification_tokens WHERE token='{_authToken}'"
-        # .fetchone(): 검색결과가 None인지 구분 해주는 메소드
-        row = conn.execute(text(stmt)).fetchone()
-        if row:
-            # 검색 결과가 있을 때 처리
-            user_id = row.user_id
-            iat = row.token_issued_at
-            exp = datetime.strftime(row.token_expiration_time, '%Y-%m-%d %H:%M:%S')
+    with Session(current_app.database) as session:
+        mail_auth_token = session.query(EmailVerificationTokens).filter(EmailVerificationTokens.token == _authToken).first()
 
-            if exp < datetime.now():
-                # 만료 시간보다 현재 시간이 빠를 때
-                stmt = f"UPDATE users SET authStatus = 1 WHERE user_id='{user_id}'"
-                conn.execute(text(stmt))
+        if mail_auth_token:
+            # 토큰의 만료기간이 지나지 않았을 때
+            if mail_auth_token.token_expiration_time < korea_now_time():
+                user = session.query(Users).filter(Users.user_id == mail_auth_token.user_id).first()
+                user.authStatus = True
+                session.commit()
 
-                # 여기는 응답을 페이지 이동으로 해야할듯.....
-                return jsonify({'msg': '이메일 인증 완료'})
-            else:
-                return jsonify({'msg': '만료된 토큰입니다.'})
-        else:
-            return jsonify({'msg': '토큰이 유효하지 않습니다.'})
-            
+                return jsonify({'result': '이메일 인증 완료'})
+    return jsonify({'result': '유효하지 않은 토큰입니다.'})
+
 # 로그인
 @bp.route('/login', methods=['POST'])
-def login():
+def login():    
     _email = request.json['email']
     _password = request.json['password']
+    
+    with Session(current_app.database) as session:
+        user = session.query(Users).filter(Users.email == _email).first()
 
-    # email로 user_id, uuid 검색 쿼리
-    with current_app.database.connect() as conn:
-        stmt = f"SELECT * FROM users WHERE email='{_email}'"
-        row = conn.execute(text(stmt)).fetchone()
+        # 유저 정보 검색 실패
+        if not user:
+            return jsonify({'result': protocol.NOT_FOUND_EMAIL})
         
-        if not row:
-            return jsonify({'result': 'NoID'})
-        user_id = row.user_id
-        uuid = row.uuid
+        pw = session.query(Passwords).filter(Passwords.user_id == user.user_id).first()
 
-        stmt = f"SELECT * FROM access_tokens WHERE user_id='{user_id}'"
-        row = conn.execute(text(stmt)).fetchone()
-        if row:
-            return jsonify({'access_token': row.access_token})
+        # 비밀번호가 검색되지 않음
+        if not pw:
+            print(f"예외발생: 비밀번호가 검색되지 않는 유저 user_id: {user.user_id}")
+            return jsonify({}), 400
 
-        # user_id로 hash_pw, salt 검색 쿼리
-        stmt = f"SELECT * FROM passwords WHERE user_id='{user_id}'"
-        row = conn.execute(text(stmt)).fetchone()
-        hashed_pw = row.password
-        salt = row.salt
+        # _password + salt를 해싱
 
-        # _password + salt를 해싱 후 hash_password와 비교
-        pw_and_salt = _password + salt
-        hashed_input_pw = hashlib.sha256(pw_and_salt.encode()).hexdigest()
+        hashed_pw = hashlib.sha256(((_password + pw.salt).encode())).hexdigest()
 
-        if hashed_pw == hashed_input_pw:
-            # 맞으면 password 테이블의 update_date 컬럼 update
-            kst_now = korea_now_time()
-            stmt = f"UPDATE passwords SET update_date ='{kst_now}' WHERE user_id='{user_id}'"
-        else:
-            return jsonify({'result': 'NoPW'}), 401
+        if pw.password != hashed_pw:
+            # 비밀번호 오류!
+            return jsonify({'result': protocol.NOT_CORRECT_PASSWORD})
 
+        # 이메일, 비밀번호가 모두 유효하기 때문에 엑세스 토큰 발급
+        access_token = session.query(AccessTokens).filter(Users.user_id == user.user_id).first()
+
+    if access_token:
+        print(f"'{user.email}' 유저의 엑세스 토큰이 이미 존재하므로 기존의 토큰을 전송합니다.")
+        return jsonify({'result': protocol.OK, 'access_token': access_token.access_token})
+    
+    print(f"'{user.email}' 유저의 엑세스 토큰이 검색되지 않았으므로 엑세스 토큰을 발급합니다.")
+
+    access_token = generate_access_token(user.user_id, user.uuid)
     print(_email + "님이 로그인하였습니다.")
-    access_token = generate_access_token(str(user_id))
 
-    return jsonify({'result': 'OK', 'access_token': access_token})
+    return jsonify({'result': protocol.OK, 'access_token': access_token})
+
+# 엑세스 토큰 발급
+def generate_access_token(user_id, uuid):
+    kst_now = korea_now_time()
+    iat = kst_now
+    exp = kst_now + timedelta(days=1)
+    print(f"생성된 발급시간: {iat}, 생성된 만료시간: {exp}")
+
+    payload = {
+        'sub': uuid,
+        'iat': int(round(iat.timestamp())),
+        'exp': int(round(exp.timestamp()))
+        # int로 형변환해서 소수점을 버리는 과정에서 데이터가 손실
+        # 반올림으로 정확한 값을 유지
+    }
+
+    access_token = jwt.encode(payload, '221124104', algorithm='HS256')
+    # DB에 access token 저장
+
+    stmt = AccessTokens(user_id=user_id, access_token=access_token, access_token_issued_at=iat, access_token_expiration_time=exp)
+
+    # merge는 replace into 와 같은 역할
+    with Session(current_app.database) as session:
+        session.merge(stmt)
+        session.commit()
+
+    return access_token
