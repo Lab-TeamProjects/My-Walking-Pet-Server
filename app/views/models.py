@@ -1,7 +1,8 @@
 import uuid
 from sqlalchemy import Table, Column, Integer, String, Boolean, ForeignKey, DateTime
-from sqlalchemy.dialects.mysql import INTEGER
+from sqlalchemy.dialects.mysql import INTEGER, TINYINT
 from datetime import datetime
+import random
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
@@ -64,7 +65,7 @@ class Passwords(Base):
     __tablename__ = 'passwords'
 
     pw_id: Mapped[int] = mapped_column(INTEGER(unsigned=True), primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(INTEGER(unsigned=True), ForeignKey('users.user_id'), primary_key=True)
+    user_id: Mapped[int] = mapped_column(INTEGER(unsigned=True), ForeignKey('users.user_id'), nullable=False)
     password: Mapped[str] = mapped_column(String(64), nullable=False)
     salt: Mapped[str] = mapped_column(String(64), nullable=False)
     update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -92,3 +93,21 @@ class AccessTokens(Base):
     # access_token = Column(String(64), unique=True, nullable=False)
     # access_token_issued_at = Column(DateTime, nullable=False)
     # access_token_expiration_time = Column(DateTime, nullable=False)
+
+class Profiles(Base):
+    __tablename__ = 'profiles'
+
+    profile_id: Mapped[int] = mapped_column(INTEGER(unsigned=True), primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(INTEGER(unsigned=True), ForeignKey('users.user_id'), nullable=False)
+    nickname: Mapped[str] = mapped_column(String(10), nullable=False)
+    status_message: Mapped[str] = mapped_column(String(64), nullable=False)
+    sex: Mapped[str] = mapped_column(String(6), nullable=False)
+    birthday: Mapped[datetime.date] = mapped_column(DateTime, nullable=False)
+    weight: Mapped[int] = mapped_column(TINYINT(unsigned=True), nullable=False)
+    height: Mapped[int] = mapped_column(TINYINT(unsigned=True), nullable=False)
+    user_tag: Mapped[str] = mapped_column(String(6), nullable=False, default='{:04d}'.format(random.randint(0,9999)))
+    profile_img_path: Mapped[str] = mapped_column(String(100), nullable=True)
+    
+    
+    
+

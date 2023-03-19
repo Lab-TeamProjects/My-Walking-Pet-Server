@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from flask_sqlalchemy import SQLAlchemy
 # 데이터 모델 객체
-from .models import Users, Passwords, EmailVerificationTokens, AccessTokens
+from .models import Users, Passwords, EmailVerificationTokens, AccessTokens, Profiles
 
 # 환경 변수
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 # 시간 객체
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Token생성 JWT라이브러리
 import jwt
@@ -50,8 +50,9 @@ load_dotenv()
 # 한국시간 리턴
 def korea_now_time():
     kst = pytz.timezone('Asia/Seoul')
-    utc_now = datetime.utcnow()
-    return utc_now.astimezone(kst)
+    utc_now = datetime.utcnow().replace(tzinfo=pytz.utc)
+    korea_now = utc_now.astimezone(kst)
+    return korea_now
 
 # 회원가입
 @bp.route("/sign-up", methods=['POST'])
@@ -65,6 +66,7 @@ def sign_up():
     # 비번 + 솔트 해시값 얻기
     hash_pw = hashlib.sha256(_password.encode()).hexdigest()
 
+    print(f'해쉬된 비밀번호: {hash_pw}')
     # 신규 유저 데이터 객체 생성
     with Session(current_app.database) as session:
         # 신규유저 정보 삽입
@@ -84,12 +86,9 @@ def sign_up():
         session.add(new_pw)
         session.commit()
 
-        # 세션 블록 밖에서도 사용하기 위한 인스턴스 캡처
-        session.expunge(new_user)
-
-    #return jsonify({'result': protocol.OK })
-    # 인증 링크 생성
-    auth_url = email_verification(new_user.user_id)
+        # 인증 링크 생성
+        auth_url = email_verification(new_user.user_id)
+        
     # 인증 메일 발송
     send_result = send_email(_email, auth_url)
     
@@ -153,8 +152,7 @@ def check_email_duplication():
         if row:
             return jsonify({'result': protocol.EMAIL_IS_DUPLICATION})
         else:
-            return jsonify({'result': protocol.OK})
-        
+            return jsonify({'result': protocol.OK})    
 
 # 이메일 인증 페이지(완료되면 authStatus 변경)
 @bp.route('/mailauth', methods=['GET'])
@@ -166,13 +164,17 @@ def mailauth():
 
         if mail_auth_token:
             # 토큰의 만료기간이 지나지 않았을 때
-            if mail_auth_token.token_expiration_time < korea_now_time():
+            kst = pytz.timezone('Asia/Seoul')
+            expiration_time_str = mail_auth_token.token_expiration_time.strftime('%Y-%m-%d %H:%M:%S')
+            expiration_time_kst = datetime.strptime(expiration_time_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=pytz.UTC).astimezone(kst)
+
+            if expiration_time_kst > korea_now_time():
                 user = session.query(Users).filter(Users.user_id == mail_auth_token.user_id).first()
                 user.authStatus = True
                 session.commit()
 
-                return jsonify({'result': '이메일 인증 완료'})
-    return jsonify({'result': '유효하지 않은 토큰입니다.'})
+                return jsonify({'result': 'ok'})
+    return jsonify({'result': 'fail'})
 
 # 로그인
 @bp.route('/login', methods=['POST'])
@@ -202,8 +204,8 @@ def login():
             # 비밀번호 오류!
             return jsonify({'result': protocol.NOT_CORRECT_PASSWORD})
 
-        # 이메일, 비밀번호가 모두 유효하기 때문에 엑세스 토큰 발급
-        access_token = session.query(AccessTokens).filter(Users.user_id == user.user_id).first()
+        # 엑세스토큰 검색
+        access_token = session.query(AccessTokens).filter(AccessTokens.user_id == user.user_id).first()
 
     if access_token:
         print(f"'{user.email}' 유저의 엑세스 토큰이 이미 존재하므로 기존의 토큰을 전송합니다.")
@@ -242,3 +244,104 @@ def generate_access_token(user_id, uuid):
         session.commit()
 
     return access_token
+
+# 유저 정보 등록 및 수정
+@bp.route('/users/profile/edit', methods=['POST'])
+def profile_edit():
+    # 헤더 정보 가져오기
+    auth_header = request.headers.get('Authorization')
+
+    if auth_header:
+        access_token = auth_header.split(" ")[1]
+
+        user_id = verify_access_token(access_token)
+        if user_id:
+            with Session(current_app.database) as session:
+                search_profile = session.query(Profiles).filter(Profiles.user_id == user_id).first()
+
+                if search_profile:
+                    search_profile.nickname = request.json['nickname']
+                    search_profile.status_message = request.json['status_message']
+                    search_profile.sex = request.json['sex']
+                    search_profile.birthday = request.json['birthday']
+                    search_profile.weight = request.json['weight']
+                    search_profile.height = request.json['height']
+                else:
+                    new_profile = Profiles(
+                        user_id = user_id,
+                        nickname = request.json['nickname'],
+                        status_message = request.json['status_message'],
+                        sex = request.json['sex'],
+                        birthday = request.json['birthday'],
+                        weight = request.json['weight'],
+                        height = request.json['height']
+                    )
+                    session.add(new_profile)
+                session.commit()
+                return jsonify({'result': protocol.OK})
+        else:
+            return jsonify({'result': protocol.INVALID_ACCESS_TOKEN})
+    else:
+        return jsonify({}), 400
+
+
+# 유저 정보 열람
+@bp.route('/users/profile/view', methods=['POST'])
+def profile_view():
+    # 헤더 정보 가져오기
+    auth_header = request.headers.get('Authorization')
+    if auth_header:
+        access_token = auth_header.split(" ")[1]
+
+        user_id = verify_access_token(access_token)
+        if user_id:
+            with Session(current_app.database) as session:
+                profile = session.query(Profiles).filter(Profiles.user_id == user_id).first()
+
+                data = {
+                    'result': protocol.OK,
+                    'nickname': profile.nickname,
+                    'status_message': profile.status_message,
+                    'sex': profile.sex,
+                    'birthday': profile.birthday,
+                    'weight': profile.weight,
+                    'height': profile.height,
+                    'user_tag': profile.user_tag,
+                    'img_path': profile.profile_img_path
+                }
+                return jsonify(data)
+        else:
+            return jsonify({'result': protocol.INVALID_ACCESS_TOKEN})
+    else:
+        # 헤더에 인증정보가 없을 때
+        return jsonify({}), 400
+    
+def verify_access_token(access_token):
+    decoded = jwt.decode(access_token, '221124104', algorithms='HS256')
+    iat = datetime.fromtimestamp(decoded['iat'])
+    exp = datetime.fromtimestamp(decoded['exp'])
+    
+    print(access_token)
+    with Session(current_app.database) as session:
+        DB_token = session.query(AccessTokens).filter(AccessTokens.access_token == access_token).first()
+
+        if DB_token:
+            kst = pytz.timezone('Asia/Seoul')
+            exp_time_str = DB_token.access_token_expiration_time.strftime('%Y-%m-%d %H:%M:%S')
+            exp_time_kst = datetime.strptime(exp_time_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=pytz.UTC).astimezone(kst)
+
+            # 만료시간 확인
+            if exp_time_kst > korea_now_time():
+                # 토큰이 변형되지 않았는지 검증
+                if DB_token.access_token_issued_at == iat and DB_token.access_token_expiration_time == exp:
+                    return DB_token.user_id
+                else:
+                    pass
+                    # print("변형된 엑세스 토큰")
+            else:
+                pass
+                # print("엑세스 토큰 만료")
+        else:
+            pass
+            # print('엑세스토큰 검색결과 없음')
+    return None

@@ -62,6 +62,32 @@ def email_test():
     
     return response.json()
     
+
+def profile():
+    url = server + "/users/profile/edit"
+    
+    headers = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1ODgzNjU5M2ViNTk0MWJhYjcyZmQ0NjkzZTNmNWQwOSIsImlhdCI6MTY3OTIzMjY3MCwiZXhwIjoxNjc5MzE5MDcwfQ.FkO1SwwBgPswEPnbEgV9D1jV_IhsK4Yr_GYy8LoIdeU'}    
+    data = {
+        'nickname': '박예진',
+        'status_message': '안녕하세요.',
+        'sex': 'female',
+        'birthday': '2002-08-19',
+        'weight': '158',
+        'height': '60'
+    }
+    json_data = json.dumps(data)
+    headers.update({'Content-Type': 'application/json'})
+    response = requests.post(url, headers=headers, data=json_data)
+    return response.json()
+
+def profile_view():
+    url = server + "/users/profile/view"
+    headers = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1ODgzNjU5M2ViNTk0MWJhYjcyZmQ0NjkzZTNmNWQwOSIsImlhdCI6MTY3OTIzMjY3MCwiZXhwIjoxNjc5MzE5MDcwfQ.FkO1SwwBgPswEPnbEgV9D1jV_IhsK4Yr_GYy8LoIdeU'}    
+    headers.update({'Content-Type': 'application/json'})
+
+    response = requests.post(url, headers=headers)
+    return response.json()
+
 # login = Login()
 # access_token = login['access_token']
 # print(access_token)
@@ -69,4 +95,4 @@ def email_test():
 # result = login_test(access_token)
 
 #send_email()
-print(email_test())
+print(profile())
