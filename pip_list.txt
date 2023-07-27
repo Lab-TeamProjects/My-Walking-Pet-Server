@@ -1,0 +1,8 @@
+flask
+sqlalchmey
+mysql-connector
+pyjwt
+flask-sqlalchemy
+sendgrid
+python-dotenv (환경변수)
+APScheduler
