@@ -269,7 +269,6 @@ def pet_item_use(pet_id):
         item_id = request.json['item_id']
 
         with Session(current_app.database) as session:
-            pass
             item_effect = session.query(ItemEffects).filter(ItemEffects.item_id == item_id).all()
             pet_attr = session.query(PetAttributes).filter((PetAttributes.pet_id == pet_id) & (Pets.owner_id == user_id)).first()
 
@@ -299,7 +298,7 @@ def pet_item_use(pet_id):
                         pet_attr.feel += 25
                     else: 
                         pet_attr.feel = 100
-
+            return ok_json()
     except InvalidAccessToken as e:
         return jsonify({'result': protocol.INVALID_ACCESS_TOKEN})
     except NoHeaderInfo as e:
